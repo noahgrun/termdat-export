@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Termdat Export UI</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+	<div class="container">
+		<h1 class="text-2xl font-bold">Termdat Export</h1>
+
+		<div class="form-group">
+			<label for="collectionFilter">Sammlung / Glossar:</label>
+			<select id="collectionFilter">
+				</select>
+		</div>
+
+		<div class="form-group">
+			<label>Sprachen auswählen:</label>
+			<div id="languageSelection" class="checkbox-group">
+			</div>
+		</div>
+
+		<div class="form-group">
+			<label>Felder (Header) zum Exportieren auswählen:</label>
+			<div id="headerSelection">
+			</div>
+		</div>
+
+		<button id="generateAndFetchButton">Abfrage generieren & Daten abrufen</button>
+
+		<div id="loading" class="mt-4">Lädt...</div>
+
+		<div class="mt-4">
+			<label>Generierte SPARQL Abfrage:</label>
+			<pre id="queryDisplay"></pre>
+		</div>
+
+
+		<div id="results" class="mt-4">
+		</div>
+
+		<div id="downloadLinks" class="mt-4">
+		</div>
+	</div>
+
+	<script>
+		const endpointUrl = "https://register.ld.admin.ch/query/";
+
+		// Base SPARQL query, Source: https://register.ld.admin.ch/sparql/#
+		// Fetch from file to avoid hardcoding
+		let baseSparqlQuery = "";
+		fetch("baseQuery.sparql")
+			.then(response => response.text())
+			.then(text => {
+				baseSparqlQuery = text;
+			})
+			.catch(error => {
+				console.error("Fehler beim Laden der SPARQL-Basisabfrage:", error);
+			});
+
+		// Query for fetching collections
+		let collectionSparqlQuery = "";
+		fetch("collectionQuery.sparql")
+			.then(response => response.text())
+			.then(text => {
+				collectionSparqlQuery = text;
+				fetchCollections(); // fetch collections after loading the sparql query
+			})
+			.catch(error => {
+				console.error("Fehler beim Laden der Collection-SPARQL-Abfrage:", error);
+			});
+
+		// DOM Elements	
+		const collectionFilterSelect = document.getElementById("collectionFilter");
+		const languageSelectionDiv = document.getElementById("languageSelection");
+		const headerSelectionDiv = document.getElementById("headerSelection");
+		const generateAndFetchButton = document.getElementById("generateAndFetchButton");
+		const queryDisplayPre = document.getElementById("queryDisplay");
+		const resultsDiv = document.getElementById("results");
+		const downloadLinksDiv = document.getElementById("downloadLinks");
+		const loadingDiv = document.getElementById("loading");
+		
+		// Selectable languages and their prefixes
+		const languages = [
+			{ code: "de", label: "Deutsch", prefix: "DES" },
+			{ code: "fr", label: "Französisch", prefix: "FRS" },
+			{ code: "it", label: "Italienisch", prefix: "ITS" },
+			{ code: "rm", label: "Rätoromanisch", prefix: "RMS" },
+			{ code: "en", label: "Englisch", prefix: "ENG" },
+		];
+
+		// Header definitions with IDs, variables, and labels
+		const headerDefinitions = {
+			"General": [
+				{ id: "Header_Terminologiesammlung", var: "?Header_Terminologiesammlung", label: "Terminologiesammlung" },
+				{ id: "Header_TERMDAT_Link", var: "?Header_TERMDAT_Link", label: "TERMDAT Link" },
+				{ id: "Header_Fachgebiet", var: "?Header_Fachgebiet", label: "Fachgebiet" },
+				{ id: "LINDAS_Link", var: "?LINDAS_Link", label: "LINDAS Link" }
+			],
+			"LanguageSpecific": [
+				{ id: "Name", label: "Name", vars: ["_Name_1", "_Name_2", "_Name_3"] },
+				{ id: "Name_Quelle", label: "Name Quelle", vars: ["_Name_Quelle_1", "_Name_Quelle_2", "_Name_Quelle_3"] },
+				{ id: "Terminus", label: "Terminus", vars: ["_Terminus_1", "_Terminus_2", "_Terminus_3"] },
+				{ id: "Terminus_Quelle", label: "Terminus Quelle", vars: ["_Terminus_Quelle_1", "_Terminus_Quelle_2", "_Terminus_Quelle_3"] },
+				{ id: "Abkuerzung", label: "Abkürzung", vars: ["_Abkürzung_1"] }, // Angepasst basierend auf Abfrage
+				{ id: "Abkuerzung_Quelle", label: "Abkürzung Quelle", vars: ["_Abkürzung_Quelle_1"] }, // Angepasst basierend auf Abfrage
+				{ id: "Phraseologie", label: "Phraseologie", vars: ["_Phraseologie_1", "_Phraseologie_2", "_Phraseologie_3"] },
+				{ id: "Phraseologie_Quelle", label: "Phraseologie Quelle", vars: ["_Phraseologie_Quelle_1", "_Phraseologie_Quelle_2", "_Phraseologie_Quelle_3"] },
+				{ id: "Definition", label: "Definition", vars: ["_Definition_1", "_Definition_2", "_Definition_3"] },
+				{ id: "Definition_Quelle", label: "Definition Quelle", vars: ["_Definition_Quelle_1", "_Definition_Quelle_2", "_Definition_Quelle_3"] },
+				{ id: "Anmerkung", label: "Anmerkung", vars: ["_Anmerkung_1", "_Anmerkung_2", "_Anmerkung_3"] },
+				{ id: "Anmerkung_Quelle", label: "Anmerkung Quelle", vars: ["_Anmerkung_Quelle_1", "_Anmerkung_Quelle_2", "_Anmerkung_Quelle_3"] },
+				{ id: "Land", label: "Land", vars: ["_Land_1", "_Land_2", "_Land_3"] },
+			]
+		};
+
+		// Fetches collections from the SPARQL endpoint and fills it into the select element
+		async function fetchCollections() {
+			if (!collectionSparqlQuery) {
+				console.error("Collection-SPARQL-Abfrage ist noch nicht geladen.");
+				return;
+			}
+
+			try {
+				const response = await fetch(endpointUrl, {
+					method: "POST",
+					headers: {
+						Accept: "application/sparql-results+json", // Wichtig: JSON-Format für einfache Verarbeitung
+						"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+					},
+					body: new URLSearchParams({
+						query: collectionSparqlQuery,
+					}),
+				});
+
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
+
+				const data = await response.json();
+				console.log("Fetched Collections:", data);
+
+				collectionFilterSelect.innerHTML = "";
+
+				if (data.results && data.results.bindings) {
+
+					const collections = data.results.bindings.map(binding => {
+						const id = binding.id.value;
+						const displayId = id.includes(':') ? id.split(':').pop() : id;
+						return { id: id, displayId: displayId }; 
+					});
+
+					// sort collection id's alphabetically 
+					collections.sort((a, b) => a.displayId.localeCompare(b.displayId));					
+
+					collections.forEach(collection => {
+						const option = document.createElement("option");
+						option.value = `termdat:${collection.displayId}`; 
+						option.textContent = collection.displayId;     
+						collectionFilterSelect.appendChild(option);
+					});
+				}
+
+			} catch (error) {
+				console.error("Fehler beim Abrufen der Collections:", error);
+				const option = document.createElement("option");
+				option.value = "";
+				option.textContent = "Fehler beim Laden der Sammlungen";
+				collectionFilterSelect.appendChild(option);
+				collectionFilterSelect.disabled = true;
+			}
+		}
+
+		// Renders the selection options for languages and headers
+		function renderSelectionOptions() {
+			languageSelectionDiv.innerHTML = "";
+			languages.forEach(lang => {
+				const checkbox = document.createElement("input");
+				checkbox.type = "checkbox";
+				checkbox.id = `lang-${lang.code}`;
+				checkbox.value = lang.code;
+				checkbox.checked = true;
+
+				const label = document.createElement("label");
+				label.htmlFor = `lang-${lang.code}`;
+				label.textContent = lang.label;
+
+				languageSelectionDiv.appendChild(checkbox);
+				languageSelectionDiv.appendChild(label);
+			});
+
+			headerSelectionDiv.innerHTML = "";
+
+			const generalSection = document.createElement("div");
+			generalSection.classList.add("selection-group");
+			generalSection.innerHTML = '<h3>Allgemeine Header</h3><div class="checkbox-group"></div>';
+			const generalCheckboxGroup = generalSection.querySelector(".checkbox-group");
+			headerDefinitions.General.forEach(header => {
+				const checkbox = document.createElement("input");
+				checkbox.type = "checkbox";
+				checkbox.id = `header-${header.id}`;
+				checkbox.value = header.id;
+				checkbox.checked = true;
+
+				const label = document.createElement("label");
+				label.htmlFor = `header-${header.id}`;
+				label.textContent = header.label;
+
+				generalCheckboxGroup.appendChild(checkbox);
+				generalCheckboxGroup.appendChild(label);
+			});
+			headerSelectionDiv.appendChild(generalSection);
+
+			const langSpecificSection = document.createElement("div");
+			langSpecificSection.classList.add("selection-group");
+			langSpecificSection.innerHTML = '<h3>Sprachspezifische Header-Typen</h3><div class="checkbox-group"></div>';
+			const langSpecificCheckboxGroup = langSpecificSection.querySelector(".checkbox-group");
+			headerDefinitions.LanguageSpecific.forEach(headerType => {
+				const checkbox = document.createElement("input");
+				checkbox.type = "checkbox";
+				checkbox.id = `header-type-${headerType.id}`;
+				checkbox.value = headerType.id;
+				checkbox.checked = true;
+
+				const label = document.createElement("label");
+				label.htmlFor = `header-type-${headerType.id}`;
+				label.textContent = headerType.label;
+
+				langSpecificCheckboxGroup.appendChild(checkbox);
+				langSpecificCheckboxGroup.appendChild(label);
+			});
+			headerSelectionDiv.appendChild(langSpecificSection);
+		}
+
+		// Builds the specific SPARQL query based on user selections	   
+		function buildSparqlQuery() {
+			const selectedCollection = collectionFilterSelect.value;
+
+			const selectedLanguageCodes = Array.from(
+				languageSelectionDiv.querySelectorAll("input[type='checkbox']:checked")
+			).map(cb => cb.value);
+
+			const selectedGeneralHeaderIds = Array.from(
+				headerSelectionDiv.querySelectorAll(".selection-group:first-child input[type='checkbox']:checked")
+			).map(cb => cb.value);
+
+			const selectedLangSpecificHeaderTypeIds = Array.from(
+				headerSelectionDiv.querySelectorAll(".selection-group:last-child input[type='checkbox']:checked")
+			).map(cb => cb.value);
+
+
+			if (selectedLanguageCodes.length === 0) {
+				resultsDiv.textContent = "Bitte wählen Sie mindestens eine Sprache aus.";
+				resultsDiv.classList.add("error");
+				return null;
+			}
+
+			if (selectedGeneralHeaderIds.length === 0 && selectedLangSpecificHeaderTypeIds.length === 0) {
+				resultsDiv.textContent = "Bitte wählen Sie mindestens einen Header zum Exportieren aus.";
+				resultsDiv.classList.add("error");
+				return null;
+			}
+			resultsDiv.classList.remove("error");
+
+			const baseQueryLines = baseSparqlQuery.split('\n');
+
+			let prefixLines = [];
+			let selectLineIndex = -1;
+			for (let i = 0; i < baseQueryLines.length; i++) {
+				if (baseQueryLines[i].trim().startsWith("SELECT")) {
+					selectLineIndex = i;
+					break;
+				}
+				prefixLines.push(baseQueryLines[i]);
+			}
+
+			if (selectLineIndex === -1) {
+				console.error("Error: 'SELECT'-Klausel in der Basisabfrage nicht gefunden.");
+				return null;
+			}
+
+			let fromLineIndex = -1;
+			for (let i = 0; i < baseQueryLines.length; i++) {
+				if (baseQueryLines[i].includes("FROM <https://lindas.admin.ch/fch/termdat> {")) {
+					fromLineIndex = i;
+					break;
+				}
+			}
+
+			if (fromLineIndex === -1) {
+				console.error("Error: 'FROM'-Klausel in der Basisabfrage nicht gefunden.");
+				return null;
+			}
+
+			let staticWhereBlock = baseQueryLines.slice(fromLineIndex).join('\n');
+
+			const collectionValueRegex = /VALUES\s+\?collection\s+\{termdat:DEC19\}/;
+			staticWhereBlock = staticWhereBlock.replace(collectionValueRegex, `VALUES ?collection {${selectedCollection}}`);
+
+			let finalSelectVars = [];
+
+			headerDefinitions.General.forEach(header => {
+				if (selectedGeneralHeaderIds.includes(header.id)) {
+					finalSelectVars.push(header.var);
+				}
+			});
+
+			selectedLanguageCodes.forEach(langCode => {
+				const lang = languages.find(l => l.code === langCode);
+				if (lang) {
+					headerDefinitions.LanguageSpecific.forEach(headerType => {
+						if (selectedLangSpecificHeaderTypeIds.includes(headerType.id)) {
+							headerType.vars.forEach(suffix => {
+								finalSelectVars.push(`?${lang.prefix}${suffix}`);
+							});
+						}
+					});
+				}
+			});
+
+			const newSelectClauseContent = `SELECT\n\t${finalSelectVars.join('\n\t')}\n`;
+
+			let finalSparqlQuery = prefixLines.join('\n') + '\n' + newSelectClauseContent + staticWhereBlock;
+
+			finalSparqlQuery = finalSparqlQuery.split('\n').filter(line => line.trim() !== '').join('\n');
+
+			return finalSparqlQuery;
+		}
+
+		// Fetches data based on the generated SPARQL query
+		async function fetchData() {
+			const sparqlQuery = buildSparqlQuery();
+			if (!sparqlQuery) {
+				queryDisplayPre.textContent = "Error: Fehler beim Erstellen der SPARQL-Abfrage.";
+				return;
+			}
+
+			queryDisplayPre.textContent = sparqlQuery;
+			console.log("Generated SPARQL Query:", sparqlQuery);
+
+			resultsDiv.textContent = "";
+			downloadLinksDiv.innerHTML = "";
+			loadingDiv.style.display = "block";
+			generateAndFetchButton.disabled = true;
+
+			try {
+				const response = await fetch(endpointUrl, {
+					method: "POST",
+					headers: {
+						Accept: "text/csv",
+						"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+					},
+					body: new URLSearchParams({
+						query: sparqlQuery,
+					}),
+				});
+
+				console.log("Response status:", response.status);
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					console.error("HTTP error details:", errorText);
+					throw new Error(`HTTP error! status: ${response.status}, details: ${errorText}`);
+				}
+
+				const data = await response.text();
+				console.log("Raw Data:", data);
+
+				resultsDiv.textContent = data;
+
+				createDownloadLinks(data);
+
+			} catch (error) {
+				console.error("Error fetching data:", error);
+				resultsDiv.textContent = `Fehler beim Abrufen der Daten: ${error.message}`;
+				resultsDiv.classList.add("error");
+			} finally {
+				loadingDiv.style.display = "none";
+				generateAndFetchButton.disabled = false;
+			}
+		}
+
+		// Creates a CSV download link for the fetched data
+		function createDownloadLinks(csvData) {
+			if (!csvData || csvData.trim() === "" || csvData.trim() === ",\n") {
+				downloadLinksDiv.innerHTML = "<p>Keine Daten zum Herunterladen verfügbar.</p>";
+				return;
+			}
+
+			// CSV
+			const csvBlob = new Blob([csvData], { type: "text/csv" });
+			const csvUrl = URL.createObjectURL(csvBlob);
+			const csvLink = document.createElement("a");
+			csvLink.href = csvUrl;
+			csvLink.download = "termdat_export.csv";
+			csvLink.textContent = "Als CSV herunterladen";
+			downloadLinksDiv.appendChild(csvLink);
+		}
+
+		generateAndFetchButton.addEventListener("click", fetchData);
+
+		renderSelectionOptions();
+	</script>
+</body>
+
+</html>

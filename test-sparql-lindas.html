@@ -1,0 +1,44 @@
+<!-- https://lindas.admin.ch/data-usage/data-usage-types/ -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Termdat Example</title>
+  </head>
+  <body>
+    <script>
+
+      // Example SPARQL query to fetch data from the Termdat endpoint
+      // This query retrieves all triples related to the Termdat entry with ID 51810    
+      let select = `PREFIX schema: <http://schema.org/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT * WHERE {
+	?sub ?pred <https://register.ld.admin.ch/termdat/51810> .
+  	?sub schema:name ?o .
+} LIMIT 20
+`
+	
+      const getData = async (queryString) => {
+        const response = await fetch("https://register.ld.admin.ch/query/", {
+          method: "POST",
+          headers: {
+            Accept: "text/csv",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          },
+          body: new URLSearchParams({
+            query: queryString,
+          }),
+        });
+        const data = await response.text();
+        document.write(data);
+      };
+    </script>
+    <button
+      onclick="getData(select)"
+    >
+      Go!
+    </button>
+  </body>
+</html>

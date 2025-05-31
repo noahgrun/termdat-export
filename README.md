@@ -14,3 +14,6 @@ This tool provides a user-friendly interface to query and export data from the T
 - TERMDAT: https://www.termdat.bk.admin.ch/search
 - LINDAS: https://ld.admin.ch/ 
 - LINDAS SPARQL Endpoint: https://register.ld.admin.ch/query/
+
+## Live Version
+- GitHub Pages: https://noahgrun.github.io/termdat-export/ 

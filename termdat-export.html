@@ -370,11 +370,8 @@
 
 				const data = await response.text();
 				console.log("Raw Data:", data);
-
-				resultsDiv.textContent = data;
-
+                displayCsvAsTable(data);
 				createDownloadLinks(data);
-
 			} catch (error) {
 				console.error("Error fetching data:", error);
 				resultsDiv.textContent = `Fehler beim Abrufen der Daten: ${error.message}`;
@@ -384,6 +381,69 @@
 				generateAndFetchButton.disabled = false;
 			}
 		}
+
+		// Displays the fetched CSV data as a table
+		function displayCsvAsTable(csvData) {
+            if (!csvData || csvData.trim() === "" || csvData.trim() === ",\n") {
+                resultsDiv.innerHTML = "<p>Keine Daten zum Anzeigen verfügbar.</p>";
+                return;
+            }
+
+            const lines = csvData.trim().split('\n');
+            const headers = lines[0].split(',').map(header => header.trim());
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+			// Header
+            const headerRow = document.createElement('tr');
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Body
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i].trim() === "") continue; 
+                const values = [];
+                let inQuote = false;
+                let currentValue = '';
+                for (let j = 0; j < lines[i].length; j++) {
+                    const char = lines[i][j];
+                    if (char === '"') {
+                        inQuote = !inQuote;
+                    } else if (char === ',' && !inQuote) {
+                        values.push(currentValue.trim());
+                        currentValue = '';
+                    } else {
+                        currentValue += char;
+                    }
+                }
+                values.push(currentValue.trim()); 
+
+
+                const row = document.createElement('tr');
+                values.forEach(value => {
+                    const td = document.createElement('td');
+                    if (value === null || value === undefined || value.trim() === "") {
+                        td.textContent = "-"; 
+                        td.classList.add("empty-value"); 
+                    } else {
+                        td.textContent = value;
+                    }
+                    row.appendChild(td);
+                });
+                tbody.appendChild(row);
+            }
+
+            table.appendChild(tbody);
+            resultsDiv.innerHTML = ""; 
+            resultsDiv.appendChild(table);
+        }
+
 
 		// Creates a CSV download link for the fetched data
 		function createDownloadLinks(csvData) {

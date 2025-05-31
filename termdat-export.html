@@ -130,7 +130,7 @@
 				const response = await fetch(endpointUrl, {
 					method: "POST",
 					headers: {
-						Accept: "application/sparql-results+json", // Wichtig: JSON-Format für einfache Verarbeitung
+						Accept: "application/sparql-results+json",
 						"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
 					},
 					body: new URLSearchParams({
@@ -463,9 +463,7 @@
 		}
 
 		generateAndFetchButton.addEventListener("click", fetchData);
-
 		renderSelectionOptions();
 	</script>
 </body>
-
 </html>

@@ -16,7 +16,7 @@
 		<div class="form-group">
 			<label for="collectionFilter">Sammlung / Glossar:</label>
 			<select id="collectionFilter">
-				</select>
+			</select>
 		</div>
 
 		<div class="form-group">
@@ -84,7 +84,7 @@
 		const resultsDiv = document.getElementById("results");
 		const downloadLinksDiv = document.getElementById("downloadLinks");
 		const loadingDiv = document.getElementById("loading");
-		
+
 		// Selectable languages and their prefixes
 		const languages = [
 			{ code: "de", label: "Deutsch", prefix: "DES" },
@@ -152,16 +152,16 @@
 					const collections = data.results.bindings.map(binding => {
 						const id = binding.id.value;
 						const displayId = id.includes(':') ? id.split(':').pop() : id;
-						return { id: id, displayId: displayId }; 
+						return { id: id, displayId: displayId };
 					});
 
 					// sort collection id's alphabetically 
-					collections.sort((a, b) => a.displayId.localeCompare(b.displayId));					
+					collections.sort((a, b) => a.displayId.localeCompare(b.displayId));
 
 					collections.forEach(collection => {
 						const option = document.createElement("option");
-						option.value = `termdat:${collection.displayId}`; 
-						option.textContent = collection.displayId;     
+						option.value = `termdat:${collection.displayId}`;
+						option.textContent = collection.displayId;
 						collectionFilterSelect.appendChild(option);
 					});
 				}
@@ -302,6 +302,8 @@
 			const collectionValueRegex = /VALUES\s+\?collection\s+\{termdat:DEC19\}/;
 			staticWhereBlock = staticWhereBlock.replace(collectionValueRegex, `VALUES ?collection {${selectedCollection}}`);
 
+			staticWhereBlock = removeUnusedLanguagesInFromStatement(staticWhereBlock, selectedLanguageCodes);
+
 			let finalSelectVars = [];
 
 			headerDefinitions.General.forEach(header => {
@@ -330,6 +332,64 @@
 			finalSparqlQuery = finalSparqlQuery.split('\n').filter(line => line.trim() !== '').join('\n');
 
 			return finalSparqlQuery;
+		}
+
+		// Remove unused language sets from the FROM statement
+		function removeUnusedLanguagesInFromStatement(staticWhereBlock, selectedLanguageCodes) {
+			const selectedCodes = new Set(selectedLanguageCodes);
+			const regex = /(###\s*(?:GERMAN|FRENCH|ITALIAN|ROMANSH|ENGLISH)[\s\S]*?(?=(?:###\s*(?:GERMAN|FRENCH|ITALIAN|ROMANSH|ENGLISH))|\s*$))/g;
+
+			let newFromStatement = '';
+			let lastIndex = 0;
+
+			const firstMatch = staticWhereBlock.match(regex);
+			if (firstMatch && staticWhereBlock.indexOf(firstMatch[0]) > 0) {
+				newFromStatement += staticWhereBlock.substring(0, staticWhereBlock.indexOf(firstMatch[0]));
+				lastIndex = staticWhereBlock.indexOf(firstMatch[0]);
+			} else if (!firstMatch) {
+				return staticWhereBlock;
+			}
+
+			let match;
+			while ((match = regex.exec(staticWhereBlock)) !== null) {
+				const fullMatch = match[0]; 
+
+				const headerMatch = fullMatch.match(/###\s*(GERMAN|FRENCH|ITALIAN|ROMANSH|ENGLISH)/);
+				if (!headerMatch) continue; 
+
+				const langHeader = headerMatch[1]; 
+
+				let currentLangCode;
+				switch (langHeader) {
+					case 'GERMAN':
+						currentLangCode = 'de';
+						break;
+					case 'FRENCH':
+						currentLangCode = 'fr';
+						break;
+					case 'ITALIAN':
+						currentLangCode = 'it';
+						break;
+					case 'ROMANSH':
+						currentLangCode = 'rm';
+						break;
+					case 'ENGLISH':
+						currentLangCode = 'en';
+						break;
+					default:
+						currentLangCode = null;
+				}
+
+				if (currentLangCode && selectedCodes.has(currentLangCode)) {
+					newFromStatement += fullMatch;
+				}
+			}
+
+			if(!selectedCodes.has('en')) {
+				newFromStatement = newFromStatement.concat("\n", "}");
+			}
+
+			return newFromStatement;
 		}
 
 		// Fetches data based on the generated SPARQL query
@@ -370,7 +430,7 @@
 
 				const data = await response.text();
 				console.log("Raw Data:", data);
-                displayCsvAsTable(data);
+				displayCsvAsTable(data);
 				createDownloadLinks(data);
 			} catch (error) {
 				console.error("Error fetching data:", error);
@@ -384,65 +444,65 @@
 
 		// Displays the fetched CSV data as a table
 		function displayCsvAsTable(csvData) {
-            if (!csvData || csvData.trim() === "" || csvData.trim() === ",\n") {
-                resultsDiv.innerHTML = "<p>Keine Daten zum Anzeigen verfügbar.</p>";
-                return;
-            }
+			if (!csvData || csvData.trim() === "" || csvData.trim() === ",\n") {
+				resultsDiv.innerHTML = "<p>Keine Daten zum Anzeigen verfügbar.</p>";
+				return;
+			}
 
-            const lines = csvData.trim().split('\n');
-            const headers = lines[0].split(',').map(header => header.trim());
-            const table = document.createElement('table');
-            const thead = document.createElement('thead');
-            const tbody = document.createElement('tbody');
+			const lines = csvData.trim().split('\n');
+			const headers = lines[0].split(',').map(header => header.trim());
+			const table = document.createElement('table');
+			const thead = document.createElement('thead');
+			const tbody = document.createElement('tbody');
 
 			// Header
-            const headerRow = document.createElement('tr');
-            headers.forEach(headerText => {
-                const th = document.createElement('th');
-                th.textContent = headerText;
-                headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
+			const headerRow = document.createElement('tr');
+			headers.forEach(headerText => {
+				const th = document.createElement('th');
+				th.textContent = headerText;
+				headerRow.appendChild(th);
+			});
+			thead.appendChild(headerRow);
+			table.appendChild(thead);
 
-            // Body
-            for (let i = 1; i < lines.length; i++) {
-                if (lines[i].trim() === "") continue; 
-                const values = [];
-                let inQuote = false;
-                let currentValue = '';
-                for (let j = 0; j < lines[i].length; j++) {
-                    const char = lines[i][j];
-                    if (char === '"') {
-                        inQuote = !inQuote;
-                    } else if (char === ',' && !inQuote) {
-                        values.push(currentValue.trim());
-                        currentValue = '';
-                    } else {
-                        currentValue += char;
-                    }
-                }
-                values.push(currentValue.trim()); 
+			// Body
+			for (let i = 1; i < lines.length; i++) {
+				if (lines[i].trim() === "") continue;
+				const values = [];
+				let inQuote = false;
+				let currentValue = '';
+				for (let j = 0; j < lines[i].length; j++) {
+					const char = lines[i][j];
+					if (char === '"') {
+						inQuote = !inQuote;
+					} else if (char === ',' && !inQuote) {
+						values.push(currentValue.trim());
+						currentValue = '';
+					} else {
+						currentValue += char;
+					}
+				}
+				values.push(currentValue.trim());
 
 
-                const row = document.createElement('tr');
-                values.forEach(value => {
-                    const td = document.createElement('td');
-                    if (value === null || value === undefined || value.trim() === "") {
-                        td.textContent = "-"; 
-                        td.classList.add("empty-value"); 
-                    } else {
-                        td.textContent = value;
-                    }
-                    row.appendChild(td);
-                });
-                tbody.appendChild(row);
-            }
+				const row = document.createElement('tr');
+				values.forEach(value => {
+					const td = document.createElement('td');
+					if (value === null || value === undefined || value.trim() === "") {
+						td.textContent = "-";
+						td.classList.add("empty-value");
+					} else {
+						td.textContent = value;
+					}
+					row.appendChild(td);
+				});
+				tbody.appendChild(row);
+			}
 
-            table.appendChild(tbody);
-            resultsDiv.innerHTML = ""; 
-            resultsDiv.appendChild(table);
-        }
+			table.appendChild(tbody);
+			resultsDiv.innerHTML = "";
+			resultsDiv.appendChild(table);
+		}
 
 
 		// Creates a CSV download link for the fetched data
@@ -466,4 +526,5 @@
 		renderSelectionOptions();
 	</script>
 </body>
+
 </html>
